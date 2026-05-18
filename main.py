@@ -2,6 +2,7 @@ import cv2
 import time
 import numpy as np
 import mediapipe as mp
+import os
 import hand_tracking_module as htm
 import pyautogui
 from ctypes import cast, POINTER
@@ -9,10 +10,11 @@ from comtypes import CLSCTX_ALL
 from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 
 def main():
+    pyautogui.PAUSE = 0
     # --- CONFIGURATION ---
     W_CAM, H_CAM = 640, 480
     W_SCR, H_SCR = pyautogui.size()
-    SMOOTH_ALPHA = 0.2  # EMA smoothing factor
+    SMOOTH_ALPHA = 0.6  # EMA smoothing factor (higher = more responsive, less smooth)
     CLICK_DIST = 35     # Distance threshold for pinch-click
     CLICK_COOLDOWN = 0.5 # Seconds between clicks
     
@@ -21,6 +23,11 @@ def main():
     cv2.setWindowProperty("Gesture Controller HUD", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
     
     detector = htm.HandDetector(maxHands=1, detectionCon=0.85, trackCon=0.85)
+    # Initialize video writer for test recording
+    # Ensure output folder exists
+    os.makedirs('test_output', exist_ok=True)
+    video_path = os.path.join('test_output', 'gesture_recording.mp4')
+    video_writer = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*'mp4v'), 20.0, (W_CAM, H_CAM))
     cap = cv2.VideoCapture(0)
     cap.set(3, W_CAM)
     cap.set(4, H_CAM)
@@ -45,6 +52,7 @@ def main():
     vol_bar, vol_per = 400, 0
     is_dragging = False
     drag_start_time = 0
+    frame_count = 0  # added for test mode
     test_mode = False
     target_pos = (W_CAM // 2, H_CAM // 2)
     SMOOTH_DEADZONE = 5 
@@ -52,6 +60,8 @@ def main():
     prev_y_scroll = 0
     
     current_mode = "INITIALIZING..."
+    start_time = time.time()
+    record_duration = 10  # seconds
 
     while True:
         success, img = cap.read()
@@ -109,6 +119,7 @@ def main():
                 if is_dragging: pyautogui.mouseUp(); is_dragging = False
                 drag_start_time = 0
 
+
             # --- MODE: RIGHT CLICK ---
             if fingers[2] == 1 and fingers[0] == 1:
                 current_mode = "RIGHT CLICK"
@@ -147,14 +158,27 @@ def main():
 
         # Accuracy Test HUD
         if test_mode:
-            cv2.circle(img, target_pos, 20, (0, 255, 255), 2)
-            cv2.putText(img, "ACCURACY TEST: REACH CENTER", (100, H_CAM-20, 150, 450), cv2.FONT_HERSHEY_PLAIN, 2, (0, 255, 255), 2)
+            # Save frame for test report
+            os.makedirs('test_output', exist_ok=True)
+            cv2.imwrite(os.path.join('test_output', f'frame_{frame_count}.png'), img)
+            frame_count += 1
+            if frame_count >= 5:
+                # Stop after capturing 5 frames
+                break
+        # Write each frame to video file
+        video_writer.write(img)
+        cv2.circle(img, target_pos, 20, (0, 255, 255), 2)
+        cv2.putText(img, "ACCURACY TEST: REACH CENTER", (100, H_CAM-20), cv2.FONT_HERSHEY_PLAIN, 2, (0, 255, 255), 2)
 
+        # Stop after desired duration
+        # if time.time() - start_time > record_duration:
+        #     break
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'): break
         elif key == ord('t'): test_mode = not test_mode
 
     cap.release()
+    video_writer.release()
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
